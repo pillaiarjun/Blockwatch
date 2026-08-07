@@ -41,12 +41,7 @@ _camera_lock = threading.Lock()
 _camera_id = os.environ.get("CAMERA_ID") or None
 _meta_published_for = None  # camera id whose metadata has been pushed to state
 
-# The active camera id is read by the polling loop on every iteration and can
-# be changed at runtime via set_camera(). CAMERA_ID remains the startup default.
-_camera_lock = threading.Lock()
-_camera_id = os.environ.get("CAMERA_ID") or None
 
-<<<<<<< HEAD
 def get_camera_id():
     with _camera_lock:
         return _camera_id
@@ -55,8 +50,9 @@ def get_camera_id():
 def set_camera(camera_id):
     """Switch the polling loop to a new camera without a restart.
 
-    Clears stale per-camera state via state.reset_for_camera_change() when
-    that helper exists (it may land from the other branch after this one).
+    Wipes counts/history/frame/narration via state.reset_for_camera_change()
+    so the old block doesn't bleed into the new one; the loop publishes full
+    name/coords metadata on its next iteration.
     """
     global _camera_id, _meta_published_for
     with _camera_lock:
@@ -65,17 +61,7 @@ def set_camera(camera_id):
         _camera_id = camera_id or None
         _meta_published_for = None
     log.info("camera switched to %s", camera_id)
-    reset = getattr(state, "reset_for_camera_change", None)
-    if callable(reset):
-        try:
-            reset()
-        except Exception as exc:
-            log.warning("state.reset_for_camera_change() failed: %s", exc)
-    else:
-        log.warning(
-            "state.reset_for_camera_change() not available yet; "
-            "previous camera's counts/history may linger until it lands"
-        )
+    state.reset_for_camera_change({"id": camera_id})
 
 
 def _publish_meta(camera_id):
@@ -101,31 +87,6 @@ def _publish_meta(camera_id):
     state.set_camera_meta(meta)
     _meta_published_for = camera_id
     log.info("watching camera %s (%s, %s)", camera_id, meta.get("name"), meta.get("area"))
-=======
-
-def set_camera(camera_id):
-    """Switch the watched camera. Takes effect on the next poll iteration."""
-    global _camera_id
-    with _camera_lock:
-        _camera_id = camera_id
-    # Wipe counts/history/frame/narration so the old block doesn't bleed into
-    # the new one; the loop enriches name/coords when it resolves the camera.
-    state.reset_for_camera_change({"id": camera_id})
-    log.info("camera switched to %s", camera_id)
-
-
-def _resolve_camera(camera_id):
-    try:
-        resp = requests.get(CAMERAS_URL, timeout=15)
-        resp.raise_for_status()
-        for cam in resp.json():
-            if cam.get("id") == camera_id:
-                return cam
-        log.warning("camera %s not in TMC list; polling it by id anyway", camera_id)
-    except Exception as exc:
-        log.warning("could not resolve camera %s metadata: %s", camera_id, exc)
-    return {"id": camera_id}
->>>>>>> e048f2f (Add runtime camera switching from the dashboard)
 
 
 def fetch_frame(camera_id):
@@ -163,7 +124,6 @@ def watch_loop():
             time.sleep(POLL_INTERVAL)
             continue
         try:
-<<<<<<< HEAD
             if _meta_published_for != cam_id:
                 _publish_meta(cam_id)
             frame = fetch_frame(cam_id)
@@ -174,35 +134,6 @@ def watch_loop():
             if get_camera_id() != cam_id:  # switched mid-inference; drop stale counts
                 continue
             state.set_counts(counts)
-=======
-            with _camera_lock:
-                cam_id = _camera_id
-            if cam_id is None:
-                # No camera selected (CAMERA_ID unset, nothing picked yet):
-                # idle until set_camera() is called.
-                time.sleep(POLL_INTERVAL)
-                continue
-            if _camera is None or _camera.get("id") != cam_id:
-                _camera = _resolve_camera(cam_id)
-                log.info(
-                    "watching camera %s (%s, %s)",
-                    _camera["id"], _camera.get("name"), _camera.get("area"),
-                )
-                state.set_camera_meta({
-                    "id": _camera["id"],
-                    "name": _camera.get("name"),
-                    "latitude": _camera.get("latitude"),
-                    "longitude": _camera.get("longitude"),
-                    "area": _camera.get("area"),
-                })
-            frame = fetch_frame(cam_id)
-            counts = infer_counts(frame)
-            with _camera_lock:
-                unchanged = _camera_id == cam_id
-            if unchanged:
-                state.set_frame(frame)
-                state.set_counts(counts)
->>>>>>> e048f2f (Add runtime camera switching from the dashboard)
         except Exception as exc:
             log.warning("frame skipped: %s", exc)
         time.sleep(max(0.0, POLL_INTERVAL - (time.time() - started)))
