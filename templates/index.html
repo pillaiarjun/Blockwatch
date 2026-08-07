@@ -26,6 +26,11 @@
   h1 { font-size: 2.2rem; letter-spacing: -0.02em; }
   h1 .dot { color: var(--accent); }
   #camera-name { color: var(--text-2); font-size: 1.2rem; }
+  #camera-select {
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 1rem; max-width: 340px;
+  }
   #last-updated { margin-left: auto; color: var(--text-2); font-size: 1rem; }
 
   .grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 20px; }
@@ -72,6 +77,9 @@
 <body>
   <header>
     <h1>Block Watch<span class="dot">.</span></h1>
+    <select id="camera-select" aria-label="Choose a camera">
+      <option value="">loading cameras…</option>
+    </select>
     <span id="camera-name">locating camera…</span>
     <span id="last-updated"></span>
   </header>
@@ -109,6 +117,64 @@
 
   var frameImg = document.getElementById("frame");
   var frameWaiting = document.getElementById("frame-waiting");
+  var cameraSelect = document.getElementById("camera-select");
+  var currentCameraId = null;
+  var pendingCameraId = null;
+
+  var NARRATION_PLACEHOLDER = "Gemini is watching — first narration in about a minute…";
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function loadCameras() {
+    fetch("/api/cameras")
+      .then(function (r) { return r.json(); })
+      .then(function (cams) {
+        if (!cams || !cams.length) { cameraSelect.style.display = "none"; return; }
+        var groups = {};
+        cams.forEach(function (c) {
+          var area = c.area || "Other";
+          if (!groups[area]) groups[area] = [];
+          groups[area].push(c);
+        });
+        var html = '<option value="">— choose a camera —</option>';
+        Object.keys(groups).sort().forEach(function (area) {
+          html += '<optgroup label="' + escapeHtml(area) + '">';
+          groups[area].forEach(function (c) {
+            html += '<option value="' + escapeHtml(c.id) + '">' +
+                    escapeHtml(c.name || c.id) + '</option>';
+          });
+          html += '</optgroup>';
+        });
+        cameraSelect.innerHTML = html;
+        if (currentCameraId) cameraSelect.value = currentCameraId;
+      })
+      .catch(function () { cameraSelect.style.display = "none"; });
+  }
+
+  cameraSelect.addEventListener("change", function () {
+    var id = cameraSelect.value;
+    if (!id || id === currentCameraId) return;
+    fetch("/api/camera", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: id })
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error("switch failed");
+        pendingCameraId = id;
+        document.getElementById("camera-name").textContent = "switching…";
+        frameImg.style.display = "none";
+        frameWaiting.style.display = "block";
+        renderNarration("");
+        renderStats({});
+      })
+      .catch(function () {
+        if (currentCameraId) cameraSelect.value = currentCameraId;
+      });
+  });
 
   function refreshFrame() {
     var probe = new Image();
@@ -141,6 +207,9 @@
     if (text) {
       box.textContent = "“" + text + "”";
       box.classList.remove("empty");
+    } else {
+      box.textContent = NARRATION_PLACEHOLDER;
+      box.classList.add("empty");
     }
   }
 
@@ -186,6 +255,14 @@
       .then(function (r) { return r.json(); })
       .then(function (s) {
         var cam = s.camera || {};
+        if (cam.id) {
+          currentCameraId = cam.id;
+          if (pendingCameraId && cam.id === pendingCameraId) pendingCameraId = null;
+          if (!pendingCameraId && cameraSelect.value !== cam.id &&
+              cameraSelect.style.display !== "none") {
+            cameraSelect.value = cam.id;
+          }
+        }
         if (cam.name) {
           document.getElementById("camera-name").textContent =
             cam.name + (cam.latitude ? " (" + cam.latitude + ", " + cam.longitude + ")" : "");
@@ -201,6 +278,7 @@
       .catch(function () { /* keep last good render */ });
   }
 
+  loadCameras();
   poll();
   refreshFrame();
   setInterval(poll, 3000);

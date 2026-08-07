@@ -17,6 +17,11 @@ Contract (all functions are safe to call from any thread):
     get_snapshot() -> dict                 # {"counts", "narration", "camera",
                                            #  "last_updated", "history_len"}
     get_history() -> list                  # list of {"ts": iso8601, "counts": {...}}
+
+    reset_for_camera_change(meta: dict) -> None
+                                           # atomically clears frame, counts,
+                                           # history, and narration, then sets
+                                           # camera meta for the new camera
 """
 
 import threading
@@ -91,3 +96,14 @@ def get_snapshot() -> dict:
 def get_history() -> list:
     with _lock:
         return [dict(entry) for entry in _history]
+
+
+def reset_for_camera_change(meta: dict) -> None:
+    global _frame, _counts, _camera_meta, _narration, _last_updated
+    with _lock:
+        _frame = None
+        _counts = {}
+        _history.clear()
+        _narration = ""
+        _last_updated = None
+        _camera_meta = dict(meta)
