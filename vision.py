@@ -4,6 +4,10 @@ Every POLL_INTERVAL seconds, fetches the current frame from the selected NYC
 TMC camera and runs it through Roboflow hosted inference, publishing the frame,
 camera metadata, and per-class counts into `state`. Runs in a daemon thread
 started by start().
+
+The current camera is a runtime variable: set_camera(camera_id) switches it
+without a restart, and the loop re-reads it every iteration. If no camera is
+selected (CAMERA_ID unset and set_camera never called), the loop idles.
 """
 
 import base64
@@ -33,25 +37,65 @@ CLASSES = ["car", "truck", "bus", "person", "bicycle"]
 POLL_INTERVAL = 3
 
 _started = False
-_camera = None
+_camera_lock = threading.Lock()
+_camera_id = os.environ.get("CAMERA_ID") or None
+_meta_published_for = None  # camera id whose metadata has been pushed to state
 
 
-def select_camera():
+def get_camera_id():
+    with _camera_lock:
+        return _camera_id
+
+
+def set_camera(camera_id):
+    """Switch the polling loop to a new camera without a restart.
+
+    Clears stale per-camera state via state.reset_for_camera_change() when
+    that helper exists (it may land from the other branch after this one).
+    """
+    global _camera_id, _meta_published_for
+    with _camera_lock:
+        if camera_id == _camera_id:
+            return
+        _camera_id = camera_id or None
+        _meta_published_for = None
+    log.info("camera switched to %s", camera_id)
+    reset = getattr(state, "reset_for_camera_change", None)
+    if callable(reset):
+        try:
+            reset()
+        except Exception as exc:
+            log.warning("state.reset_for_camera_change() failed: %s", exc)
+    else:
+        log.warning(
+            "state.reset_for_camera_change() not available yet; "
+            "previous camera's counts/history may linger until it lands"
+        )
+
+
+def _publish_meta(camera_id):
+    """Look up the camera in the public list and push its metadata to state."""
+    global _meta_published_for
     resp = requests.get(CAMERAS_URL, timeout=15)
     resp.raise_for_status()
-    online = [c for c in resp.json() if c.get("isOnline") == "true"]
-    if not online:
-        raise RuntimeError("no online cameras returned by the TMC API")
-    wanted = os.environ.get("CAMERA_ID")
-    if wanted:
-        for cam in online:
-            if cam.get("id") == wanted:
-                return cam
-        log.warning("CAMERA_ID %s not found among online cameras; falling back", wanted)
-    for cam in online:
-        if cam.get("area") == "Manhattan":
-            return cam
-    return online[0]
+    meta = {"id": camera_id, "name": camera_id}
+    for cam in resp.json():
+        if cam.get("id") == camera_id:
+            meta = {
+                "id": cam["id"],
+                "name": cam.get("name"),
+                "latitude": cam.get("latitude"),
+                "longitude": cam.get("longitude"),
+                "area": cam.get("area"),
+            }
+            if cam.get("isOnline") != "true":
+                log.warning("camera %s is reported offline", camera_id)
+            break
+    else:
+        log.warning("camera %s not in the TMC list; using id as name", camera_id)
+    state.set_camera_meta(meta)
+    _meta_published_for = camera_id
+    log.info("watching camera %s (%s, %s)", camera_id, meta.get("name"), meta.get("area"))
 
 
 def fetch_frame(camera_id):
@@ -82,26 +126,23 @@ def infer_counts(frame):
 
 
 def watch_loop():
-    global _camera
     while True:
         started = time.time()
+        cam_id = get_camera_id()
+        if cam_id is None:
+            time.sleep(POLL_INTERVAL)
+            continue
         try:
-            if _camera is None:
-                _camera = select_camera()
-                log.info(
-                    "watching camera %s (%s, %s)",
-                    _camera["id"], _camera.get("name"), _camera.get("area"),
-                )
-                state.set_camera_meta({
-                    "id": _camera["id"],
-                    "name": _camera.get("name"),
-                    "latitude": _camera.get("latitude"),
-                    "longitude": _camera.get("longitude"),
-                    "area": _camera.get("area"),
-                })
-            frame = fetch_frame(_camera["id"])
+            if _meta_published_for != cam_id:
+                _publish_meta(cam_id)
+            frame = fetch_frame(cam_id)
+            if get_camera_id() != cam_id:  # switched mid-fetch; drop stale frame
+                continue
             state.set_frame(frame)
-            state.set_counts(infer_counts(frame))
+            counts = infer_counts(frame)
+            if get_camera_id() != cam_id:  # switched mid-inference; drop stale counts
+                continue
+            state.set_counts(counts)
         except Exception as exc:
             log.warning("frame skipped: %s", exc)
         time.sleep(max(0.0, POLL_INTERVAL - (time.time() - started)))
