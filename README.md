@@ -109,8 +109,8 @@ from `vision.py` — no SDK dependency.
 ## Running it locally
 
 ```
-git clone https://github.com/pillaiarjun/ai-tinkerers-08072026
-cd ai-tinkerers-08072026
+git clone https://github.com/pillaiarjun/Blockwatch
+cd Blockwatch
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
