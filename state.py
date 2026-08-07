@@ -7,7 +7,7 @@ Contract (all functions are safe to call from any thread):
 
     set_counts(counts: dict) -> None       # e.g. {"car": 4, "person": 2, "truck": 1}
                                            # also appends {"ts": iso8601, "counts": ...}
-                                           # to the history (capped at last 200 entries)
+                                           # to the history (capped at last 400 entries)
 
     set_camera_meta(meta: dict) -> None    # {"id", "name", "latitude", "longitude"}
     get_camera_meta() -> dict
@@ -22,7 +22,7 @@ Contract (all functions are safe to call from any thread):
 import threading
 from datetime import datetime, timezone
 
-_HISTORY_MAX = 200
+_HISTORY_MAX = 400
 
 _lock = threading.Lock()
 

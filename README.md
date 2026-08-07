@@ -50,7 +50,7 @@ NYC DOT camera API  (polled every ~3s)
         |  latest JPEG             |  object counts
         v                          v
    state.py  — thread-safe in-memory store —
-   latest JPEG · current counts · 200-entry rolling history · narration
+   latest JPEG · current counts · 400-entry rolling history · narration
         |                          |
         |                          v
         |                  narrate.py  (daemon thread, every 60s)
@@ -68,7 +68,7 @@ NYC DOT camera API  (polled every ~3s)
 `state.py` is the seam between the two halves of the system. It is a small
 module-level store guarded by one `threading.Lock`, holding the latest JPEG,
 the current counts, camera metadata, the latest narration, and a rolling
-history capped at 200 timestamped entries. Every `set_counts()` call appends to
+history capped at 400 timestamped entries. Every `set_counts()` call appends to
 that history automatically, so the vision side never has to think about it.
 
 `narrate.py` runs a daemon thread on a 60-second cycle. Each cycle it reads the
