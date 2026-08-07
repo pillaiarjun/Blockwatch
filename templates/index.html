@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Block Watch</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #111110;
+    --surface: #1a1a19;
+    --border: #33332f;
+    --text: #ffffff;
+    --text-2: #c3c2b7;
+    --accent: #3987e5;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100vh;
+    padding: 24px;
+  }
+  header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  h1 { font-size: 2.2rem; letter-spacing: -0.02em; }
+  h1 .dot { color: var(--accent); }
+  #camera-name { color: var(--text-2); font-size: 1.2rem; }
+  #last-updated { margin-left: auto; color: var(--text-2); font-size: 1rem; }
+
+  .grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 20px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+  }
+  .panel h2 {
+    font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--text-2); margin-bottom: 12px; font-weight: 600;
+  }
+
+  #frame-wrap { position: relative; min-height: 240px; display: flex; align-items: center; justify-content: center; }
+  #frame { width: 100%; border-radius: 8px; display: none; }
+  .waiting { color: var(--text-2); font-size: 1.3rem; text-align: center; padding: 40px 0; }
+
+  #stat-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+  .stat-card {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px; text-align: center;
+  }
+  .stat-card .num { font-size: 2.8rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .stat-card .label { color: var(--text-2); font-size: 1rem; text-transform: capitalize; margin-top: 4px; }
+
+  #narration-box {
+    border-left: 4px solid var(--accent);
+    background: var(--bg);
+    border-radius: 0 10px 10px 0;
+    padding: 16px 18px;
+    font-size: 1.35rem;
+    line-height: 1.5;
+    min-height: 84px;
+  }
+  #narration-box.empty { color: var(--text-2); font-style: italic; }
+
+  #trend-svg { width: 100%; height: 120px; display: block; }
+  .right-col { display: flex; flex-direction: column; gap: 20px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Block Watch<span class="dot">.</span></h1>
+    <span id="camera-name">locating camera…</span>
+    <span id="last-updated"></span>
+  </header>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Live camera</h2>
+      <div id="frame-wrap">
+        <img id="frame" alt="Latest traffic camera frame">
+        <div class="waiting" id="frame-waiting">waiting for first frame…</div>
+      </div>
+    </div>
+
+    <div class="right-col">
+      <div class="panel">
+        <h2>On the block right now</h2>
+        <div id="stat-cards"><div class="waiting">waiting for detections…</div></div>
+      </div>
+
+      <div class="panel">
+        <h2>Block Watch says</h2>
+        <div id="narration-box" class="empty">Gemini is watching — first narration in about a minute…</div>
+      </div>
+
+      <div class="panel">
+        <h2>Total detections per minute</h2>
+        <svg id="trend-svg" viewBox="0 0 400 120" preserveAspectRatio="none"></svg>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var frameImg = document.getElementById("frame");
+  var frameWaiting = document.getElementById("frame-waiting");
+
+  function refreshFrame() {
+    var probe = new Image();
+    probe.onload = function () {
+      frameImg.src = probe.src;
+      frameImg.style.display = "block";
+      frameWaiting.style.display = "none";
+    };
+    // onerror (incl. the 204 no-frame-yet case): keep whatever is showing.
+    probe.src = "/frame.jpg?t=" + Date.now();
+  }
+
+  function renderStats(counts) {
+    var el = document.getElementById("stat-cards");
+    var keys = Object.keys(counts || {}).sort(function (a, b) {
+      return counts[b] - counts[a];
+    });
+    if (!keys.length) {
+      el.innerHTML = '<div class="waiting">waiting for detections…</div>';
+      return;
+    }
+    el.innerHTML = keys.map(function (k) {
+      return '<div class="stat-card"><div class="num">' + counts[k] +
+             '</div><div class="label">' + k + '</div></div>';
+    }).join("");
+  }
+
+  function renderNarration(text) {
+    var box = document.getElementById("narration-box");
+    if (text) {
+      box.textContent = "“" + text + "”";
+      box.classList.remove("empty");
+    }
+  }
+
+  function totalOf(counts) {
+    var t = 0;
+    for (var k in counts) t += counts[k];
+    return t;
+  }
+
+  // Bucket history into per-minute totals and draw baseline-anchored bars.
+  function renderTrend(history) {
+    var svg = document.getElementById("trend-svg");
+    if (!history || history.length < 2) { svg.innerHTML = ""; return; }
+
+    var buckets = {};
+    history.forEach(function (h) {
+      var minute = h.ts.slice(0, 16); // YYYY-MM-DDTHH:MM
+      if (!buckets[minute]) buckets[minute] = { total: 0, n: 0 };
+      buckets[minute].total += totalOf(h.counts);
+      buckets[minute].n += 1;
+    });
+    var minutes = Object.keys(buckets).sort().slice(-30);
+    var vals = minutes.map(function (m) {
+      return buckets[m].total / buckets[m].n; // avg total per sample that minute
+    });
+    var max = Math.max.apply(null, vals) || 1;
+
+    var W = 400, H = 120, pad = 4;
+    var bw = (W - pad * 2) / vals.length;
+    var parts = vals.map(function (v, i) {
+      var h = Math.max(2, (v / max) * (H - 14));
+      var x = pad + i * bw;
+      var label = minutes[i].slice(11) + " — avg " + v.toFixed(1) + " objects";
+      return '<rect x="' + (x + 1).toFixed(1) + '" y="' + (H - h).toFixed(1) +
+             '" width="' + Math.max(1, bw - 2).toFixed(1) + '" height="' + h.toFixed(1) +
+             '" rx="2" fill="var(--accent)"><title>' + label + '</title></rect>';
+    });
+    svg.innerHTML = parts.join("");
+  }
+
+  function poll() {
+    fetch("/api/state")
+      .then(function (r) { return r.json(); })
+      .then(function (s) {
+        var cam = s.camera || {};
+        if (cam.name) {
+          document.getElementById("camera-name").textContent =
+            cam.name + (cam.latitude ? " (" + cam.latitude + ", " + cam.longitude + ")" : "");
+        }
+        if (s.last_updated) {
+          document.getElementById("last-updated").textContent =
+            "last updated " + new Date(s.last_updated).toLocaleTimeString();
+        }
+        renderStats(s.counts);
+        renderNarration(s.narration);
+        renderTrend(s.history);
+      })
+      .catch(function () { /* keep last good render */ });
+  }
+
+  poll();
+  refreshFrame();
+  setInterval(poll, 3000);
+  setInterval(refreshFrame, 3000);
+})();
+</script>
+</body>
+</html>
