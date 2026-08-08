@@ -21,7 +21,13 @@
     --yellow: #ffc61e;   /* NYC taxi / school-bus yellow */
     --amber: #ffb000;    /* VMS message-board LED */
     --warn: #ec835a;
-    --bar: #90918a;
+    --bar: #ffc61e;
+    /* per-class series colors (CVD-validated dark palette, fixed order) */
+    --c-person: #3987e5;
+    --c-car: #d95926;
+    --c-truck: #199e70;
+    --c-bus: #c98500;
+    --c-bicycle: #d55181;
     --display: "Barlow Condensed", "Arial Narrow", sans-serif;
     --body: "Barlow", system-ui, sans-serif;
     --mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
@@ -394,7 +400,9 @@
       .concat(keys.filter(function (k) { return CLASS_ORDER.indexOf(k) === -1; }));
     el.innerHTML = ordered.map(function (k) {
       var v = counts[k];
-      return '<div class="stat-card"><div class="num' + (v ? '' : ' zero') + '">' + v +
+      var safe = /^[a-z]+$/.test(k) ? k : "";
+      var style = v && safe ? ' style="color: var(--c-' + safe + ', var(--ink))"' : '';
+      return '<div class="stat-card"><div class="num' + (v ? '' : ' zero') + '"' + style + '>' + v +
              '</div><div class="label">' + escapeHtml(k) + '</div></div>';
     }).join("");
   }
