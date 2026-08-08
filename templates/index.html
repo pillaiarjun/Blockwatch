@@ -4,79 +4,249 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Block Watch</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚦</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
   :root {
     color-scheme: dark;
-    --bg: #111110;
-    --surface: #1a1a19;
-    --border: #33332f;
-    --text: #ffffff;
-    --text-2: #c3c2b7;
-    --accent: #3987e5;
+    --asphalt: #0f100e;
+    --panel: #161714;
+    --screen: #0a0a09;
+    --border: #2b2c27;
+    --ink: #f2f2ec;
+    --ink-2: #b7b8ae;
+    --muted: #82837a;
+    --yellow: #ffc61e;   /* NYC taxi / school-bus yellow */
+    --amber: #ffb000;    /* VMS message-board LED */
+    --warn: #ec835a;
+    --bar: #90918a;
+    --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+    --body: "Barlow", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--asphalt);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 15px;
+    line-height: 1.5;
     min-height: 100vh;
-    padding: 24px;
+    padding: 28px clamp(16px, 4vw, 40px) 48px;
   }
-  header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
-  h1 { font-size: 2.2rem; letter-spacing: -0.02em; }
-  h1 .dot { color: var(--accent); }
-  #camera-name { color: var(--text-2); font-size: 1.2rem; }
-  #camera-select {
-    background: var(--surface); color: var(--text);
-    border: 1px solid var(--border); border-radius: 8px;
-    padding: 8px 10px; font-size: 1rem; max-width: 340px;
-  }
-  #last-updated { margin-left: auto; color: var(--text-2); font-size: 1rem; }
 
-  .grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 20px; }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .wordmark {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 2.4rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+  .live-dot {
+    width: 12px; height: 12px;
+    background: var(--yellow);
+    border-radius: 50%;
+    align-self: center;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+  @media (prefers-reduced-motion: reduce) {
+    .live-dot { animation: none; }
+  }
+  .tagline {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  #camera-select {
+    background: var(--panel);
+    color: var(--ink);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 9px 12px;
+    font-family: var(--body);
+    font-size: 0.95rem;
+    max-width: 320px;
+  }
+  #camera-select:focus-visible,
+  a:focus-visible {
+    outline: 2px solid var(--yellow);
+    outline-offset: 2px;
+  }
+  #camera-name {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    color: var(--ink-2);
+  }
+  #last-updated {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  /* crosswalk stripes */
+  .crosswalk {
+    height: 7px;
+    margin: 18px 0 22px;
+    background: repeating-linear-gradient(
+      90deg,
+      rgba(242,242,236,0.16) 0 26px,
+      transparent 26px 44px
+    );
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: 20px;
+  }
   @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
 
   .panel {
-    background: var(--surface);
+    background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: 8px;
     padding: 18px;
   }
   .panel h2 {
-    font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.1em;
-    color: var(--text-2); margin-bottom: 12px; font-weight: 600;
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 1rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    margin-bottom: 14px;
+  }
+  .panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .panel-head .peak {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--muted);
   }
 
-  #frame-wrap { position: relative; min-height: 240px; display: flex; align-items: center; justify-content: center; }
-  #frame { width: 100%; border-radius: 8px; display: none; }
-  .waiting { color: var(--text-2); font-size: 1.3rem; text-align: center; padding: 40px 0; }
+  #frame-wrap {
+    position: relative;
+    min-height: 240px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--screen);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  #frame { width: 100%; display: none; }
+  .frame-caption {
+    margin-top: 10px;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .waiting {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    text-align: center;
+    padding: 40px 12px;
+  }
 
-  #stat-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+  .right-col { display: flex; flex-direction: column; gap: 20px; }
+
+  #stat-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 10px;
+  }
   .stat-card {
-    background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
-    padding: 14px; text-align: center;
+    background: var(--screen);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 10px 10px;
+    text-align: center;
   }
-  .stat-card .num { font-size: 2.8rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
-  .stat-card .label { color: var(--text-2); font-size: 1rem; text-transform: capitalize; margin-top: 4px; }
+  .stat-card .num {
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 2.3rem;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-card .num.zero { color: var(--muted); }
+  .stat-card .label {
+    font-family: var(--display);
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin-top: 4px;
+  }
 
+  /* signature: narration as a roadside variable-message sign */
   #narration-box {
-    border-left: 4px solid var(--accent);
-    background: var(--bg);
-    border-radius: 0 10px 10px 0;
-    padding: 16px 18px;
-    font-size: 1.35rem;
-    line-height: 1.5;
-    min-height: 84px;
+    background: var(--screen);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 18px 20px;
+    min-height: 96px;
+    font-family: var(--mono);
+    font-size: 1.02rem;
+    line-height: 1.7;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--amber);
+    text-shadow: 0 0 14px rgba(255, 176, 0, 0.35);
+    background-image: radial-gradient(rgba(255,255,255,0.028) 1px, transparent 1px);
+    background-size: 4px 4px;
   }
-  #narration-box.empty { color: var(--text-2); font-style: italic; }
+  #narration-box.empty {
+    color: color-mix(in srgb, var(--amber) 45%, var(--muted));
+    text-shadow: none;
+  }
 
   #trend-svg { width: 100%; height: 120px; display: block; }
-  .right-col { display: flex; flex-direction: column; gap: 20px; }
+  .trend-axis {
+    margin-top: 6px;
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
 </style>
 </head>
 <body>
   <header>
-    <h1>Block Watch<span class="dot">.</span></h1>
+    <div class="wordmark">
+      <span class="live-dot" aria-hidden="true"></span>
+      <h1>Block Watch</h1>
+      <span class="tagline">NYC DOT camera agent</span>
+    </div>
     <select id="camera-select" aria-label="Choose a camera">
       <option value="">loading cameras…</option>
     </select>
@@ -84,29 +254,39 @@
     <span id="last-updated"></span>
   </header>
 
+  <div class="crosswalk" aria-hidden="true"></div>
+
   <div class="grid">
     <div class="panel">
       <h2>Live camera</h2>
       <div id="frame-wrap">
         <img id="frame" alt="Latest traffic camera frame">
-        <div class="waiting" id="frame-waiting">waiting for first frame…</div>
+        <div class="waiting" id="frame-waiting">WAITING FOR FIRST FRAME…</div>
+      </div>
+      <div class="frame-caption">
+        <span>NYC DOT · refreshed every 3s</span>
+        <span id="frame-coords"></span>
       </div>
     </div>
 
     <div class="right-col">
       <div class="panel">
         <h2>On the block right now</h2>
-        <div id="stat-cards"><div class="waiting">waiting for detections…</div></div>
+        <div id="stat-cards"><div class="waiting">WAITING FOR DETECTIONS…</div></div>
       </div>
 
       <div class="panel">
         <h2>Block Watch says</h2>
-        <div id="narration-box" class="empty">Gemini is watching — first narration in about a minute…</div>
+        <div id="narration-box" class="empty">Gemini is watching — first report in about a minute…</div>
       </div>
 
       <div class="panel">
-        <h2>Total detections per minute</h2>
+        <div class="panel-head">
+          <h2>Detections per minute</h2>
+          <span class="peak" id="trend-peak"></span>
+        </div>
         <svg id="trend-svg" viewBox="0 0 400 120" preserveAspectRatio="none"></svg>
+        <div class="trend-axis"><span id="trend-start"></span><span id="trend-end"></span></div>
       </div>
     </div>
   </div>
@@ -121,7 +301,8 @@
   var currentCameraId = null;
   var pendingCameraId = null;
 
-  var NARRATION_PLACEHOLDER = "Gemini is watching — first narration in about a minute…";
+  var NARRATION_PLACEHOLDER = "Gemini is watching — first report in about a minute…";
+  var CLASS_ORDER = ["person", "car", "truck", "bus", "bicycle"];
 
   function escapeHtml(s) {
     return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -204,23 +385,24 @@
 
   function renderStats(counts) {
     var el = document.getElementById("stat-cards");
-    var keys = Object.keys(counts || {}).sort(function (a, b) {
-      return counts[b] - counts[a];
-    });
+    var keys = Object.keys(counts || {});
     if (!keys.length) {
-      el.innerHTML = '<div class="waiting">waiting for detections…</div>';
+      el.innerHTML = '<div class="waiting">WAITING FOR DETECTIONS…</div>';
       return;
     }
-    el.innerHTML = keys.map(function (k) {
-      return '<div class="stat-card"><div class="num">' + counts[k] +
-             '</div><div class="label">' + k + '</div></div>';
+    var ordered = CLASS_ORDER.filter(function (k) { return k in counts; })
+      .concat(keys.filter(function (k) { return CLASS_ORDER.indexOf(k) === -1; }));
+    el.innerHTML = ordered.map(function (k) {
+      var v = counts[k];
+      return '<div class="stat-card"><div class="num' + (v ? '' : ' zero') + '">' + v +
+             '</div><div class="label">' + escapeHtml(k) + '</div></div>';
     }).join("");
   }
 
   function renderNarration(text) {
     var box = document.getElementById("narration-box");
     if (text) {
-      box.textContent = "“" + text + "”";
+      box.textContent = text;
       box.classList.remove("empty");
     } else {
       box.textContent = NARRATION_PLACEHOLDER;
@@ -234,10 +416,23 @@
     return t;
   }
 
+  function fmtMinute(ms) {
+    return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
   // Bucket history into per-minute totals and draw baseline-anchored bars.
   function renderTrend(history) {
     var svg = document.getElementById("trend-svg");
-    if (!history || history.length < 2) { svg.innerHTML = ""; return; }
+    var peakEl = document.getElementById("trend-peak");
+    var startEl = document.getElementById("trend-start");
+    var endEl = document.getElementById("trend-end");
+    if (!history || history.length < 2) {
+      svg.innerHTML = "";
+      peakEl.textContent = "";
+      startEl.textContent = "";
+      endEl.textContent = "";
+      return;
+    }
 
     var buckets = {};
     history.forEach(function (h) {
@@ -249,23 +444,34 @@
       buckets[minute].n += 1;
     });
     var minutes = Object.keys(buckets).map(Number).sort(function (a, b) { return a - b; }).slice(-30);
+    if (minutes.length < 2) { // a lone bucket renders as one giant slab
+      svg.innerHTML = "";
+      peakEl.textContent = "";
+      startEl.textContent = "collecting…";
+      endEl.textContent = "";
+      return;
+    }
     var vals = minutes.map(function (m) {
       return buckets[m].total / buckets[m].n; // avg total per sample that minute
     });
     var max = Math.max.apply(null, vals) || 1;
 
-    var W = 400, H = 120, pad = 4;
+    var W = 400, H = 120, pad = 2;
     var bw = (W - pad * 2) / vals.length;
-    var parts = vals.map(function (v, i) {
-      var h = Math.max(2, (v / max) * (H - 14));
+    var parts = ['<line x1="0" y1="' + (H - 0.5) + '" x2="' + W + '" y2="' + (H - 0.5) +
+                 '" stroke="#2b2c27" stroke-width="1"/>'];
+    vals.forEach(function (v, i) {
+      var h = Math.max(2, (v / max) * (H - 10));
       var x = pad + i * bw;
-      var label = new Date(minutes[i]).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) +
-                  " — avg " + v.toFixed(1) + " objects";
-      return '<rect x="' + (x + 1).toFixed(1) + '" y="' + (H - h).toFixed(1) +
+      var label = fmtMinute(minutes[i]) + " — avg " + v.toFixed(1) + " objects";
+      parts.push('<rect x="' + (x + 1).toFixed(1) + '" y="' + (H - h).toFixed(1) +
              '" width="' + Math.max(1, bw - 2).toFixed(1) + '" height="' + h.toFixed(1) +
-             '" rx="2" fill="var(--accent)"><title>' + label + '</title></rect>';
+             '" fill="var(--bar)"><title>' + label + '</title></rect>');
     });
     svg.innerHTML = parts.join("");
+    peakEl.textContent = "peak " + max.toFixed(1) + "/min";
+    startEl.textContent = fmtMinute(minutes[0]);
+    endEl.textContent = fmtMinute(minutes[minutes.length - 1]);
   }
 
   function poll() {
@@ -282,9 +488,9 @@
           }
         }
         if ((cam.name || cam.id) && !pendingCameraId) {
-          document.getElementById("camera-name").textContent =
-            (cam.name || cam.id) +
-            (cam.latitude ? " (" + cam.latitude + ", " + cam.longitude + ")" : "");
+          document.getElementById("camera-name").textContent = cam.name || cam.id;
+          document.getElementById("frame-coords").textContent =
+            cam.latitude ? cam.latitude + ", " + cam.longitude : "";
         }
         var lastUpdated = document.getElementById("last-updated");
         if (s.status) {
