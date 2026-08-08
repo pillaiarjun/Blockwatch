@@ -114,7 +114,7 @@ def infer_counts(frame):
     # Roboflow hosted inference rejects raw JPEG bytes — body must be base64.
     resp = requests.post(
         ROBOFLOW_URL.format(model=MODEL_ID),
-        params={"api_key": api_key, "confidence": 20, "overlap": 30},
+        params={"api_key": api_key, "confidence": 10, "overlap": 30},
         data=base64.b64encode(frame),
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=30,
