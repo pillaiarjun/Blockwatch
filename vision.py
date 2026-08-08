@@ -114,7 +114,9 @@ def infer_counts(frame):
     # Roboflow hosted inference rejects raw JPEG bytes — body must be base64.
     resp = requests.post(
         ROBOFLOW_URL.format(model=MODEL_ID),
-        params={"api_key": api_key, "confidence": 10, "overlap": 30},
+        # conf 3 + overlap 60 measured 25 people on a frame where conf 10
+        # found 7 — dense-crowd recall on 352x240 frames needs both knobs.
+        params={"api_key": api_key, "confidence": 3, "overlap": 60},
         data=base64.b64encode(frame),
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=30,
