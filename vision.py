@@ -39,6 +39,7 @@ POLL_INTERVAL = 3
 _started = False
 _camera_lock = threading.Lock()
 _camera_id = os.environ.get("CAMERA_ID") or None
+_switch_gen = 0  # bumped on every switch so in-flight results can be dropped
 _meta_published_for = None  # camera id whose metadata has been pushed to state
 
 
@@ -47,24 +48,33 @@ def get_camera_id():
         return _camera_id
 
 
-def set_camera(camera_id):
+def _current():
+    with _camera_lock:
+        return _camera_id, _switch_gen
+
+
+def set_camera(camera_id, meta=None):
     """Switch the polling loop to a new camera without a restart.
 
     Wipes counts/history/frame/narration via state.reset_for_camera_change()
-    so the old block doesn't bleed into the new one; the loop publishes full
-    name/coords metadata on its next iteration.
+    so the old block doesn't bleed into the new one. Pass `meta` (id/name/area)
+    when known so the UI shows the new camera's name immediately; the loop
+    still refreshes full metadata (coords) on its next iteration.
     """
-    global _camera_id, _meta_published_for
+    global _camera_id, _switch_gen, _meta_published_for
     with _camera_lock:
         if camera_id == _camera_id:
             return
         _camera_id = camera_id or None
+        _switch_gen += 1
         _meta_published_for = None
     log.info("camera switched to %s", camera_id)
-    state.reset_for_camera_change({"id": camera_id})
+    seed = dict(meta) if meta else {}
+    seed["id"] = camera_id
+    state.reset_for_camera_change(seed)
 
 
-def _publish_meta(camera_id):
+def _publish_meta(camera_id, gen):
     """Look up the camera in the public list and push its metadata to state."""
     global _meta_published_for
     resp = requests.get(CAMERAS_URL, timeout=15)
@@ -84,6 +94,8 @@ def _publish_meta(camera_id):
             break
     else:
         log.warning("camera %s not in the TMC list; using id as name", camera_id)
+    if _current()[1] != gen:  # switched while downloading the list; drop stale meta
+        return
     state.set_camera_meta(meta)
     _meta_published_for = camera_id
     log.info("watching camera %s (%s, %s)", camera_id, meta.get("name"), meta.get("area"))
@@ -117,25 +129,38 @@ def infer_counts(frame):
 
 
 def watch_loop():
+    global _meta_published_for
     while True:
         started = time.time()
-        cam_id = get_camera_id()
+        cam_id, gen = _current()
         if cam_id is None:
             time.sleep(POLL_INTERVAL)
             continue
         try:
             if _meta_published_for != cam_id:
-                _publish_meta(cam_id)
+                try:
+                    _publish_meta(cam_id, gen)
+                except Exception as exc:
+                    # Camera-list outage must not block frame polling; the UI
+                    # already has name/area seeded from the picker.
+                    log.warning("camera list fetch failed (%s); continuing", exc)
+                    if _current()[1] == gen:
+                        cur = state.get_camera_meta()
+                        if cur.get("id") != cam_id or not cur.get("name"):
+                            state.set_camera_meta({"id": cam_id, "name": cam_id})
+                        _meta_published_for = cam_id
             frame = fetch_frame(cam_id)
-            if get_camera_id() != cam_id:  # switched mid-fetch; drop stale frame
+            if _current()[1] != gen:  # switched mid-fetch; drop stale frame
                 continue
             state.set_frame(frame)
             counts = infer_counts(frame)
-            if get_camera_id() != cam_id:  # switched mid-inference; drop stale counts
+            if _current()[1] != gen:  # switched mid-inference; drop stale counts
                 continue
             state.set_counts(counts)
+            state.set_status("")
         except Exception as exc:
             log.warning("frame skipped: %s", exc)
+            state.set_status(str(exc))
         time.sleep(max(0.0, POLL_INTERVAL - (time.time() - started)))
 
 
@@ -144,4 +169,6 @@ def start():
     if _started:
         return
     _started = True
+    if not os.environ.get("ROBOFLOW_API_KEY"):
+        log.error("ROBOFLOW_API_KEY is not set — frames will poll but nothing will be detected")
     threading.Thread(target=watch_loop, name="vision", daemon=True).start()

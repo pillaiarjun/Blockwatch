@@ -35,6 +35,7 @@ _frame: bytes | None = None
 _counts: dict = {}
 _camera_meta: dict = {}
 _narration: str = ""
+_status: str = ""  # latest vision-loop error, "" when healthy
 _last_updated: str | None = None
 _history: list = []
 
@@ -82,12 +83,19 @@ def set_narration(text: str) -> None:
         _narration = text
 
 
+def set_status(text: str) -> None:
+    global _status
+    with _lock:
+        _status = text
+
+
 def get_snapshot() -> dict:
     with _lock:
         return {
             "counts": dict(_counts),
             "narration": _narration,
             "camera": dict(_camera_meta),
+            "status": _status,
             "last_updated": _last_updated,
             "history_len": len(_history),
         }
@@ -99,11 +107,12 @@ def get_history() -> list:
 
 
 def reset_for_camera_change(meta: dict) -> None:
-    global _frame, _counts, _camera_meta, _narration, _last_updated
+    global _frame, _counts, _camera_meta, _narration, _status, _last_updated
     with _lock:
         _frame = None
         _counts = {}
         _history.clear()
         _narration = ""
+        _status = ""
         _last_updated = None
         _camera_meta = dict(meta)

@@ -76,10 +76,13 @@ def _loop() -> None:
             if len(history) < 2:
                 log.info("not enough history yet (%d entries); skipping", len(history))
             else:
+                camera_id = state.get_camera_meta().get("id")
                 text = _call_gemini(_build_prompt(history))
-                if text:
+                if text and state.get_camera_meta().get("id") == camera_id:
                     state.set_narration(text)
                     log.info("narration updated: %s", text[:120])
+                elif text:
+                    log.info("camera switched during narration; dropping stale text")
         except Exception:
             log.exception("narration cycle failed; will retry next interval")
         time.sleep(INTERVAL_SECONDS)

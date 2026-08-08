@@ -40,26 +40,31 @@ def frame():
     )
 
 
-@app.route("/api/cameras")
-def api_cameras():
+def _get_cameras():
+    """Online camera list ({id, name, area}), cached for _CAMERAS_TTL seconds."""
     now = time.time()
     with _cameras_lock:
         if _cameras_cache["data"] and now - _cameras_cache["ts"] < _CAMERAS_TTL:
-            return jsonify(_cameras_cache["data"])
+            return _cameras_cache["data"]
+    resp = requests.get(CAMERAS_URL, timeout=15)
+    resp.raise_for_status()
+    # The TMC API reports isOnline as the string "true"/"false".
+    cams = [
+        {"id": c.get("id"), "name": c.get("name"), "area": c.get("area")}
+        for c in resp.json()
+        if c.get("id") and c.get("isOnline") in (True, "true", "True", 1)
+    ]
+    cams.sort(key=lambda c: (c["area"] or "", c["name"] or ""))
+    with _cameras_lock:
+        _cameras_cache["ts"] = now
+        _cameras_cache["data"] = cams
+    return cams
+
+
+@app.route("/api/cameras")
+def api_cameras():
     try:
-        resp = requests.get(CAMERAS_URL, timeout=15)
-        resp.raise_for_status()
-        # The TMC API reports isOnline as the string "true"/"false".
-        cams = [
-            {"id": c.get("id"), "name": c.get("name"), "area": c.get("area")}
-            for c in resp.json()
-            if c.get("id") and c.get("isOnline") in (True, "true", "True", 1)
-        ]
-        cams.sort(key=lambda c: (c["area"] or "", c["name"] or ""))
-        with _cameras_lock:
-            _cameras_cache["ts"] = now
-            _cameras_cache["data"] = cams
-        return jsonify(cams)
+        return jsonify(_get_cameras())
     except Exception:
         app.logger.exception("camera list fetch failed; returning empty list")
         return jsonify([])
@@ -71,10 +76,24 @@ def api_set_camera():
     camera_id = body.get("id")
     if not isinstance(camera_id, str) or not camera_id.strip():
         return jsonify({"error": "id must be a non-empty string"}), 400
+    camera_id = camera_id.strip()
+    # Validate against the live list so a bad id can't leave the dashboard
+    # stuck "switching…" polling a camera that will never produce frames.
+    meta = None
+    try:
+        meta = next((c for c in _get_cameras() if c["id"] == camera_id), None)
+    except Exception:
+        app.logger.exception("camera list unavailable; accepting id unvalidated")
+    if meta is None:
+        try:
+            _get_cameras()  # ensured fresh above; reaching here means id unknown
+            return jsonify({"error": "unknown or offline camera id"}), 404
+        except Exception:
+            pass  # list unreachable: fall through and accept the id as-is
     try:
         import vision
 
-        vision.set_camera(camera_id.strip())
+        vision.set_camera(camera_id, meta=meta)
     except (ImportError, AttributeError):
         return jsonify({"error": "vision module unavailable"}), 503
     return jsonify({"camera": state.get_camera_meta()})

@@ -132,7 +132,13 @@
     fetch("/api/cameras")
       .then(function (r) { return r.json(); })
       .then(function (cams) {
-        if (!cams || !cams.length) { cameraSelect.style.display = "none"; return; }
+        if (!cams || !cams.length) {
+          // Transient list failure: keep the picker and retry — being able to
+          // hook onto any camera from the UI is the whole point.
+          cameraSelect.innerHTML = '<option value="">cameras unavailable — retrying…</option>';
+          setTimeout(loadCameras, 5000);
+          return;
+        }
         var groups = {};
         cams.forEach(function (c) {
           var area = c.area || "Other";
@@ -151,7 +157,10 @@
         cameraSelect.innerHTML = html;
         if (currentCameraId) cameraSelect.value = currentCameraId;
       })
-      .catch(function () { cameraSelect.style.display = "none"; });
+      .catch(function () {
+        cameraSelect.innerHTML = '<option value="">cameras unavailable — retrying…</option>';
+        setTimeout(loadCameras, 5000);
+      });
   }
 
   cameraSelect.addEventListener("change", function () {
@@ -165,6 +174,7 @@
       .then(function (r) {
         if (!r.ok) throw new Error("switch failed");
         pendingCameraId = id;
+        frameEpoch += 1; // invalidate in-flight frame probes from the old camera
         document.getElementById("camera-name").textContent = "switching…";
         frameImg.style.display = "none";
         frameWaiting.style.display = "block";
@@ -172,13 +182,18 @@
         renderStats({});
       })
       .catch(function () {
-        if (currentCameraId) cameraSelect.value = currentCameraId;
+        document.getElementById("camera-name").textContent =
+          "switch failed — try another camera";
+        cameraSelect.value = currentCameraId || "";
       });
   });
 
+  var frameEpoch = 0;
   function refreshFrame() {
     var probe = new Image();
+    var epoch = frameEpoch;
     probe.onload = function () {
+      if (epoch !== frameEpoch) return; // camera switched while this loaded
       frameImg.src = probe.src;
       frameImg.style.display = "block";
       frameWaiting.style.display = "none";
@@ -226,12 +241,14 @@
 
     var buckets = {};
     history.forEach(function (h) {
-      var minute = h.ts.slice(0, 16); // YYYY-MM-DDTHH:MM
+      // Bucket and label in the viewer's local time (ts is UTC ISO).
+      var t = new Date(h.ts);
+      var minute = t.getTime() - t.getTime() % 60000;
       if (!buckets[minute]) buckets[minute] = { total: 0, n: 0 };
       buckets[minute].total += totalOf(h.counts);
       buckets[minute].n += 1;
     });
-    var minutes = Object.keys(buckets).sort().slice(-30);
+    var minutes = Object.keys(buckets).map(Number).sort(function (a, b) { return a - b; }).slice(-30);
     var vals = minutes.map(function (m) {
       return buckets[m].total / buckets[m].n; // avg total per sample that minute
     });
@@ -242,7 +259,8 @@
     var parts = vals.map(function (v, i) {
       var h = Math.max(2, (v / max) * (H - 14));
       var x = pad + i * bw;
-      var label = minutes[i].slice(11) + " — avg " + v.toFixed(1) + " objects";
+      var label = new Date(minutes[i]).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) +
+                  " — avg " + v.toFixed(1) + " objects";
       return '<rect x="' + (x + 1).toFixed(1) + '" y="' + (H - h).toFixed(1) +
              '" width="' + Math.max(1, bw - 2).toFixed(1) + '" height="' + h.toFixed(1) +
              '" rx="2" fill="var(--accent)"><title>' + label + '</title></rect>';
@@ -263,13 +281,19 @@
             cameraSelect.value = cam.id;
           }
         }
-        if (cam.name) {
+        if ((cam.name || cam.id) && !pendingCameraId) {
           document.getElementById("camera-name").textContent =
-            cam.name + (cam.latitude ? " (" + cam.latitude + ", " + cam.longitude + ")" : "");
+            (cam.name || cam.id) +
+            (cam.latitude ? " (" + cam.latitude + ", " + cam.longitude + ")" : "");
         }
-        if (s.last_updated) {
-          document.getElementById("last-updated").textContent =
+        var lastUpdated = document.getElementById("last-updated");
+        if (s.status) {
+          lastUpdated.textContent = "⚠ " + s.status;
+        } else if (s.last_updated) {
+          lastUpdated.textContent =
             "last updated " + new Date(s.last_updated).toLocaleTimeString();
+        } else {
+          lastUpdated.textContent = "";
         }
         renderStats(s.counts);
         renderNarration(s.narration);
