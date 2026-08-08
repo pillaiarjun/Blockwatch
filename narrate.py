@@ -45,7 +45,9 @@ def _call_gemini(prompt: str) -> str | None:
     if not api_key:
         log.warning("GEMINI_API_KEY not set; skipping narration")
         return None
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    # gemini-2.0-flash was retired (404s as of Aug 2026); the -latest alias
+    # tracks whatever flash model is current.
+    model = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
         f"{model}:generateContent?key={api_key}"
