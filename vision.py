@@ -33,9 +33,6 @@ CAMERAS_URL = "https://webcams.nyctmc.org/api/cameras"
 FRAME_URL = "https://webcams.nyctmc.org/api/cameras/{id}/image"
 ROBOFLOW_URL = "https://detect.roboflow.com/{model}"
 MODEL_ID = os.environ.get("ROBOFLOW_MODEL", "coco/24")
-# Roboflow's default 40% confidence misses most of a crowd on the tiny
-# 352x240 TMC frames; 15% recovers distant pedestrians without junk.
-CONFIDENCE = os.environ.get("ROBOFLOW_CONFIDENCE", "15")
 CLASSES = ["car", "truck", "bus", "person", "bicycle"]
 POLL_INTERVAL = 3
 
@@ -117,7 +114,7 @@ def infer_counts(frame):
     # Roboflow hosted inference rejects raw JPEG bytes — body must be base64.
     resp = requests.post(
         ROBOFLOW_URL.format(model=MODEL_ID),
-        params={"api_key": api_key, "confidence": CONFIDENCE, "overlap": 30},
+        params={"api_key": api_key, "confidence": 20, "overlap": 30},
         data=base64.b64encode(frame),
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=30,
