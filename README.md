@@ -29,15 +29,12 @@ data feed nobody watches can become something a person would actually read.
 
 ## Status
 
-The detection half of the pipeline, `vision.py` (camera polling plus Roboflow
-inference), is still in progress and is not in this repository yet. The shared
-state contract it will write into (`state.py`), the narration loop, the Flask
-app, and the dashboard are complete and running; `app.py` already attempts to
-import `vision` and start it, and boots cleanly without it. Until `vision.py`
-lands, the dashboard shows its "waiting for first frame" state and the
-narration loop idles, because narration only fires once at least two detection
-samples exist in history. The description of `vision.py` below is its intended
-design, not a claim about shipped code.
+Complete and deployed. Both halves of the pipeline are in this repository and
+running on Cloud Run: `vision.py` (camera polling plus Roboflow inference) and
+the UI/narration half (`state.py`, `narrate.py`, `app.py`, the dashboard). The
+camera is chosen from the dashboard itself — a dropdown of every online NYC
+DOT camera — and can be switched at runtime without a restart; the app boots
+with no camera selected and waits for a pick (or honors `CAMERA_ID` if set).
 
 ## How it works
 
@@ -59,11 +56,20 @@ NYC DOT camera API  (polled every ~3s)
         |                     Gemini API
         v
      app.py  (Flask)
-     /  ·  /api/state  ·  /frame.jpg  ·  /healthz
+     /  ·  /api/state  ·  /frame.jpg  ·  /api/cameras  ·  POST /api/camera  ·  /healthz
         |
         v
   Google Cloud Run  (single instance)
 ```
+
+`vision.py` polls the selected camera every 3 seconds and sends each frame to
+Roboflow hosted inference (base64-encoded — the endpoint rejects raw JPEG
+bytes) with `confidence=3, overlap=60`. Those thresholds are deliberately
+aggressive: on the DOT feed's tiny 352×240 stills, Roboflow's default 40%
+confidence found 1 person in a frame where a human counts about 30, and the
+default NMS overlap merges people standing in a crowd. Camera switching is
+race-safe — a generation counter drops any frame, counts, or metadata that
+finish after a switch, so the previous block never bleeds into the new one.
 
 `state.py` is the seam between the two halves of the system. It is a small
 module-level store guarded by one `threading.Lock`, holding the latest JPEG,
@@ -80,7 +86,10 @@ try/except so a failed call can never kill the thread.
 
 `app.py` serves the dashboard at `/`, the full state plus history as JSON at
 `/api/state`, the latest frame at `/frame.jpg` (with `Cache-Control: no-store`,
-returning 204 before the first frame arrives), and a health check at
+returning 204 before the first frame arrives), the online-camera list at
+`/api/cameras` (cached five minutes), a runtime camera switch at
+`POST /api/camera` (validated against the live list — an unknown or offline id
+gets a 404 instead of a dashboard stuck waiting), and a health check at
 `/healthz`. The dashboard itself (`templates/index.html`) is one self-contained
 page — vanilla JavaScript, inline SVG for the per-minute trend, no CDN
 dependencies — that polls `/api/state` and refreshes the frame every 3 seconds.
@@ -117,10 +126,12 @@ pip install -r requirements.txt
 
 export GEMINI_API_KEY=your-key-here
 export ROBOFLOW_API_KEY=your-key-here
-export CAMERA_ID=your-camera-id
 
 python app.py
 ```
+
+A gitignored `.env` file works too (loaded via python-dotenv). `CAMERA_ID` is
+optional — without it, pick a camera from the dashboard dropdown.
 
 The app serves on `http://localhost:8080`. It degrades gracefully when data is
 missing: without `vision.py` running you get the dashboard in its waiting
@@ -134,9 +145,10 @@ Procfile command: `gunicorn --bind 0.0.0.0:8080 --workers 1 --threads 8
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `GEMINI_API_KEY` | Gemini API key for the narration loop | none; narration skips if unset |
-| `GEMINI_MODEL` | Gemini model name | `gemini-2.0-flash` |
-| `ROBOFLOW_API_KEY` | Roboflow hosted inference key (used by `vision.py`) | none |
-| `CAMERA_ID` | NYC DOT camera to watch (used by `vision.py`) | none |
+| `GEMINI_MODEL` | Gemini model name | `gemini-flash-latest` |
+| `ROBOFLOW_API_KEY` | Roboflow hosted inference key (used by `vision.py`) | none; detection skips if unset |
+| `ROBOFLOW_MODEL` | Roboflow model id | `coco/24` |
+| `CAMERA_ID` | NYC DOT camera to watch at boot (optional — the dashboard picker also sets it) | none; boots idle |
 | `PORT` | HTTP port, injected by Cloud Run | `8080` |
 
 ## Deploying to Cloud Run
@@ -147,17 +159,20 @@ gcloud run deploy block-watch \
   --region us-east1 \
   --allow-unauthenticated \
   --max-instances 1 \
-  --set-env-vars "GEMINI_API_KEY=your-key-here,ROBOFLOW_API_KEY=your-key-here,CAMERA_ID=your-camera-id"
+  --min-instances 1 \
+  --no-cpu-throttling \
+  --set-env-vars "GEMINI_API_KEY=your-key-here,ROBOFLOW_API_KEY=your-key-here"
 ```
 
-`--max-instances 1` is required, not a suggestion. All application state lives
-in memory inside `state.py`; if Cloud Run scaled the service to two instances,
-each would hold its own frame, its own history, and its own narration, and
-requests would land on whichever copy the load balancer picked. The Procfile
-pins gunicorn to a single worker process with multiple threads for the same
-reason. Setting `--min-instances 1` is also worth considering so the rolling
-history survives idle periods instead of rebuilding from empty after each cold
-start.
+All three instance flags are required, not suggestions. `--max-instances 1`:
+all application state lives in memory inside `state.py`; if Cloud Run scaled
+the service to two instances, each would hold its own frame, its own history,
+and its own narration, and requests would land on whichever copy the load
+balancer picked. The Procfile pins gunicorn to a single worker process with
+multiple threads for the same reason. `--min-instances 1` and
+`--no-cpu-throttling`: the polling and narration loops are background threads,
+and without an always-on, always-allocated CPU they stall between requests and
+the rolling history rebuilds from empty after every cold start.
 
 ## Design tradeoffs and known limitations
 
